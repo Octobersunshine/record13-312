@@ -40,18 +40,39 @@ def _validate_format(fmt: str):
     return fmt
 
 
+def _has_transparency(img: Image.Image) -> bool:
+    if img.mode in ("RGBA", "LA", "PA"):
+        alpha = img.getchannel("A")
+        return alpha.getextrema()[0] < 255
+    if img.mode == "P":
+        if "transparency" in img.info:
+            return True
+        try:
+            rgba = img.convert("RGBA")
+            alpha = rgba.getchannel("A")
+            return alpha.getextrema()[0] < 255
+        except Exception:
+            return False
+    return False
+
+
+def _flatten_white_background(img: Image.Image) -> Image.Image:
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    bg = Image.new("RGB", img.size, (255, 255, 255))
+    r, g, b, a = img.split()
+    bg.paste(Image.merge("RGB", (r, g, b)), mask=a)
+    return bg
+
+
 def convert_image(input_bytes: bytes, output_format: str, quality: int = 95) -> bytes:
     img = Image.open(io.BytesIO(input_bytes))
 
     pillow_format = FORMAT_MAP[output_format]
 
     if pillow_format == "JPEG":
-        if img.mode in ("RGBA", "LA", "P"):
-            bg = Image.new("RGB", img.size, (255, 255, 255))
-            if img.mode == "P":
-                img = img.convert("RGBA")
-            bg.paste(img, mask=img.split()[-1])
-            img = bg
+        if _has_transparency(img):
+            img = _flatten_white_background(img)
         elif img.mode != "RGB":
             img = img.convert("RGB")
 
